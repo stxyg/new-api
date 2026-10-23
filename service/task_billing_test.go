@@ -221,6 +221,27 @@ func TestPriceDataReplaceAndApplyOtherRatios(t *testing.T) {
 	assert.Equal(t, 1.0, priceData.OtherRatioMultiplier())
 }
 
+func TestTaskBillingOtherWritesUpstreamModelDiagnosticsInPublicScope(t *testing.T) {
+	// Admins/root see the mapping diagnostics at the top level; the user
+	// projection in model/log_other.go strips them from log owners.
+	task := makeTask(1, 1, 100, 0, BillingSourceWallet, 0)
+	task.Properties.UpstreamModelName = "upstream-secret"
+
+	other := taskBillingOther(task).Snapshot()
+
+	assert.Equal(t, "upstream-secret", other["upstream_model_name"])
+	assert.Equal(t, true, other["is_model_mapped"])
+}
+
+func TestTaskBillingOtherOmitsMappingDiagnosticsWhenModelUnmapped(t *testing.T) {
+	task := makeTask(1, 1, 100, 0, BillingSourceWallet, 0)
+
+	other := taskBillingOther(task).Snapshot()
+
+	assert.NotContains(t, other, "upstream_model_name")
+	assert.NotContains(t, other, "is_model_mapped")
+}
+
 func TestTaskBillingOtherFiltersHistoricalOtherRatios(t *testing.T) {
 	task := makeTask(1, 1, 100, 0, BillingSourceWallet, 0)
 	task.PrivateData.BillingContext.OtherRatios = map[string]float64{

@@ -25,6 +25,16 @@ var legacySensitiveLogOtherKeys = []string{
 	"reject_reason",
 }
 
+// userHiddenLogOtherKeys carry channel routing diagnostics (the channel's
+// real upstream model) that operators need in the admin console. They are
+// allowed in the public storage scope so admins/root see them unchanged, but
+// the user-facing projection strips them from log owners.
+var userHiddenLogOtherKeys = []string{
+	"upstream_model_name",
+	"response_model",
+	"is_model_mapped",
+}
+
 type logOtherVisibility int
 
 const (
@@ -251,6 +261,12 @@ func formatLogOtherJSON(value string, visibility logOtherVisibility) string {
 			}
 		}
 		for _, key := range legacySensitiveLogOtherKeys {
+			if _, exists := values[key]; exists {
+				delete(values, key)
+				changed = true
+			}
+		}
+		for _, key := range userHiddenLogOtherKeys {
 			if _, exists := values[key]; exists {
 				delete(values, key)
 				changed = true

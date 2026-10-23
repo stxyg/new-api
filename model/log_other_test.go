@@ -59,14 +59,50 @@ func TestLogOtherRejectsSensitivePublicFields(t *testing.T) {
 	} {
 		assert.False(t, other.SetPublic(key, "must-not-leak"), key)
 	}
+	// Upstream-model diagnostics are allowed in the stored public scope; the
+	// user-facing projection, not the writer, hides them from log owners.
+	for _, key := range []string{
+		"upstream_model_name",
+		"response_model",
+		"is_model_mapped",
+	} {
+		assert.True(t, other.SetPublic(key, "operator-only"), key)
+	}
 	other.MergePublic(map[string]any{
 		"request_path": "/v1/responses",
 		"channel_name": "still-must-not-leak",
 		"admin_info":   map[string]any{"secret": true},
 	})
 
-	require.JSONEq(t, `{"request_path":"/v1/responses"}`, other.JSONString())
+	require.JSONEq(t, `{
+		"request_path": "/v1/responses",
+		"upstream_model_name": "operator-only",
+		"response_model": "operator-only",
+		"is_model_mapped": "operator-only"
+	}`, other.JSONString())
 	require.JSONEq(t, `{}`, NewLogOther().JSONString())
+}
+
+func TestLogOtherUserProjectionStripsUpstreamModelMetadata(t *testing.T) {
+	// Historical logs (and any future stray writer) keep these keys in the
+	// public top level of the stored JSON. The user-facing projection must
+	// remove them so log owners cannot see the channel's upstream model.
+	stored := `{
+		"request_path": "/v1/chat/completions",
+		"upstream_model_name": "upstream-secret",
+		"is_model_mapped": true,
+		"response_model": {"requested_model": "m", "upstream_model": "upstream-secret", "returned_model": "upstream-secret"},
+		"admin_info": {"use_channel": ["c1"]}
+	}`
+
+	userView := formatLogOtherJSON(stored, logOtherVisibilityUser)
+	require.JSONEq(t, `{"request_path": "/v1/chat/completions"}`, userView)
+
+	// Admins keep the diagnostics: admin_info survives and legacy top-level
+	// keys are left untouched for backward compatibility with stored rows.
+	adminView := formatLogOtherJSON(stored, logOtherVisibilityAdmin)
+	assert.Contains(t, adminView, "upstream-secret")
+	assert.Contains(t, adminView, "use_channel")
 }
 
 func TestLogOtherJSONStringDoesNotMutateReceiver(t *testing.T) {

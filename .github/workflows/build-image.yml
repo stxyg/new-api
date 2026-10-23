@@ -26,6 +26,31 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve and stamp version
+        id: ver
+        shell: bash
+        run: |
+          set -euo pipefail
+          sha="sha-${GITHUB_SHA::7}"
+          base=""
+          # 1) 本次推送打的是 v* tag，直接用它
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            base="${GITHUB_REF#refs/tags/}"
+          # 2) 否则找提交历史上最近的官方版本 tag
+          else
+            base="$(git describe --tags --match 'v[0-9]*' --abbrev=0 2>/dev/null || true)"
+          fi
+          # 3) 都没有时用日期兜底，避免显示未知版本
+          if [[ -z "$base" ]]; then
+            base="v0.0.1-dev$(date -u +%Y%m%d)"
+          fi
+          version="${base}+custom.${sha}"
+          printf '%s' "$version" > VERSION
+          echo "value=$version" >> "$GITHUB_OUTPUT"
+          echo "Stamped VERSION -> $(cat VERSION)"
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -60,6 +85,11 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.version=${{ steps.ver.outputs.value }}
+          build-args: |
+            TARGETOS
+            TARGETARCH
           cache-from: type=gha
           cache-to: type=gha,mode=max
